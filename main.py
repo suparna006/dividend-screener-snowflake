@@ -18,10 +18,10 @@ def main():
         for _, row in df.iterrows():
             cursor.execute(
                 "INSERT INTO FINANCE_DB.DIVIDENDS_SCHEMA.DIVIDENDS (date, dividend, ticker) VALUES (%s, %s, %s)",
-                (row['date'], row['dividend'], row['ticker'])
+                (row['date'].date(), row['dividend'], row['ticker'])
             )
 
-    print("✅ MVP data loaded.")
+    print("Data loaded.")
     cursor.close()
     conn.close()
 
