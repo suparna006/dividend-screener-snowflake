@@ -1,0 +1,117 @@
+from snowflake.snowpark import Session
+import pandas as pd
+import requests
+import time
+from datetime import datetime ,timezone
+import yfinance as yf
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+import os
+from io import StringIO
+# ------------------------
+# 1. Load Private Key and Connect to Snowflake
+# ------------------------
+# Path to your private key file
+key_path = "rsa_key.pem"
+
+# Load the private key
+with open(key_path, "rb") as key_file:
+    private_key = serialization.load_pem_private_key(
+        key_file.read(),
+        password=None  # Add password here if you encrypted the key
+    )
+    
+connection_parameters = {
+    "account": "FSXJMQY-GLB11603",
+    "user": "DATAENGINEER_USR_1",
+    "private_key": private_key,
+    "role": "DATAENGINEER",
+    "warehouse": "finance_marketdata_dw",
+    "database": "FINANCE_DB",
+    "schema": "MARKETDATA_SCHEMA"
+}
+
+session = Session.builder.configs(connection_parameters).create()
+print("Connected to Snowflake.")
+
+# ------------------------
+# 2. Fetch S&P 500 Tickers from Slickcharts
+# ------------------------
+def get_sp500_tickers():
+    url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
+    headers = {
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    response = requests.get(url, headers=headers)
+    response.raise_for_status()
+
+
+    html_content = response.text  # Assuming response.text contains the HTML
+    tables = pd.read_html(StringIO(html_content))
+    #tables = pd.read_html(response.text)
+    df = tables[0]  # First table has the S&P 500 list
+
+    symbols = df['Symbol'].tolist()
+
+    return symbols
+
+tickers = get_sp500_tickers()
+#tickers = tickers[:200]
+print(f"Found {len(tickers)} tickers from SP500.")
+
+# ------------------------
+# 3. Fetch Market Data via yfinance
+# ------------------------
+
+def fetch_market_data_in_batches(tickers, batch_size=100, delay_between_batches=30):
+    all_data = []
+    now = datetime.now(timezone.utc)
+
+    for i in range(0, len(tickers), batch_size):
+        batch = tickers[i:i + batch_size]
+        print(f"Processing batch {i//batch_size + 1}: {len(batch)} tickers")
+
+        batch_data = []
+        for ticker in batch:
+            try:
+                stock = yf.Ticker(ticker)
+                info = stock.info
+
+                if not info or 'shortName' not in info:
+                    print(f"Skipping {ticker}: No valid data.")
+                    continue
+
+                batch_data.append({
+                    'TICKER': ticker.upper(),
+                    'NAME': info.get('shortName'),
+                    'PRICE': info.get('currentPrice'),
+                    'MARKET_CAP': info.get('marketCap'),
+                    'VOLUME': info.get('volume'),
+                    'PE_RATIO': info.get('trailingPE'),
+                    'DIVIDEND_YIELD': info.get('dividendYield'),
+                    'SECTOR': info.get('sector'),
+                    'LAST_UPDATED': now
+                })
+            except Exception as e:
+                print(f"Error with {ticker}: {e}")
+
+        # Convert to DataFrame and write to Snowflake
+        if batch_data:
+            df_batch = pd.DataFrame(batch_data)
+            df_batch['LAST_UPDATED'] = pd.to_datetime(df_batch['LAST_UPDATED'])
+
+            session.write_pandas(df_batch, "SP500_MARKET_DATA", overwrite=False,use_logical_type = True)
+            print(f"Uploaded batch {i//batch_size + 1} to Snowflake")
+
+        all_data.extend(batch_data)
+        time.sleep(delay_between_batches)  # Pause to respect rate limits
+
+    return pd.DataFrame(all_data)
+
+
+
+df = fetch_market_data_in_batches(tickers, batch_size=50, delay_between_batches=30)
+print(f"Retrieved market data for {len(df)} companies.")
+
+
