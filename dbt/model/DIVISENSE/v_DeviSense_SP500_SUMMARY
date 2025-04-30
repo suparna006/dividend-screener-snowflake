@@ -1,0 +1,49 @@
+ {{
+  config(
+    materialized = 'view'
+            )
+}}
+
+with src_DeviSense_SP500_SUMMARY as
+(
+
+    select 
+    MD_PD.TICKER, MD_PD.MARKET_DATE, MD_PD.OPEN, MD_PD.HIGH, MD_PD.LOW, MD_PD.CLOSE, MD_PD.VOLUME,
+    DA_PY.AVG_DIVIDEND_PERYEAR Dividend, DA_PY.DIVIDEND_YEAR,
+    TS_PM.COMMENTS
+from 
+    {{ ref("v_SP500_MarketData_PrevDay")}}   MD_PD
+inner join 
+     {{ ref("v_SP500_Dividend_Avg_PrevYear")}} DA_PY
+    on MD_PD.Ticker=DA_PY.TICKER
+Inner Join
+          {{ ref("v_Ticker_Sentiment_Score_Comments")}} TS_PM
+    on md_pd.ticker=ts_pm.ticker 
+
+)
+
+Select * from src_ {{
+  config(
+    materialized = 'view'
+            )
+}}
+
+with src_DeviSense_SP500_SUMMARY as
+(
+
+    select 
+    MD_PD.TICKER, MD_PD.MARKET_DATE, MD_PD.OPEN, MD_PD.HIGH, MD_PD.LOW, MD_PD.CLOSE, MD_PD.VOLUME,
+    DA_PY.AVG_DIVIDEND_PERYEAR Dividend, DA_PY.DIVIDEND_YEAR,
+    TS_PM.COMMENTS
+from 
+    {{ ref("v_SP500_MarketData_PrevDay")}}   MD_PD
+inner join 
+     {{ ref("v_SP500_Dividend_Avg_PrevYear")}} DA_PY
+    on MD_PD.Ticker=DA_PY.TICKER
+Inner Join
+          {{ ref("v_Ticker_Sentiment_Score_Comments")}} TS_PM
+    on md_pd.ticker=ts_pm.ticker 
+
+)
+
+Select * from src_DeviSense_SP500_SUMMARY
